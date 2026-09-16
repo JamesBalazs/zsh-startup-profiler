@@ -83,9 +83,14 @@ typeset -ga _zsp__wrapped=()
 # separator with IFS rather than writing "\t" in the string.
 _zsp__log() { local IFS=$'\t'; print -r -- "$*" >> $ZSH_PROFILE_LOG }
 
+# Sets $? to $1 without forking. `(exit N)` would do the same but spawns a
+# subshell, and this runs once per hook per profiled startup — on a machine
+# where fork is expensive that overhead swamps the measurement it is taken for.
+_zsp__st() { return $1 }
+
 # Wrap one precmd hook. $? is restored before the real hook runs: powerlevel10k
 # reads $? and $pipestatus as its first two statements, and a wrapper that
-# clobbers them makes the prompt report the wrong exit code. (exit N) restores
+# clobbers them makes the prompt report the wrong exit code. _zsp__st restores
 # $? exactly; $pipestatus collapses to one element, which is the single thing
 # this approach cannot preserve.
 _zsp__wrap() {
@@ -96,7 +101,7 @@ _zsp__wrap() {
   eval "$fn() {
     local __st=\$?
     local __s=\$EPOCHREALTIME
-    (exit \$__st)
+    _zsp__st \$__st
     _zsp__orig_$fn \"\$@\"
     local __r=\$?
     local __e=\$EPOCHREALTIME
@@ -144,7 +149,7 @@ _zsp__bootstrap() {
   local __now=$EPOCHREALTIME
   if (( ${+_zsp__done} )); then
     _zsp__seal $__now
-    (exit $__st); return
+    _zsp__st $__st; return
   fi
   typeset -g _zsp__done=1
   mkdir -p ${ZSH_PROFILE_LOG:h} 2>/dev/null
@@ -155,7 +160,7 @@ _zsp__bootstrap() {
     [[ $fn == _zsp__* ]] || _zsp__wrap $fn
   done
   autoload -Uz add-zle-hook-widget && add-zle-hook-widget line-init _zsp__line_init
-  (exit $__st)
+  _zsp__st $__st
 }
 
 precmd_functions=(_zsp__bootstrap ${precmd_functions:#_zsp__bootstrap})
